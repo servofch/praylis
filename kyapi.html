@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>今日の祈り</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Noto Sans JP', sans-serif; 
+            background-color: #f0f2f5;
+        }
+        #main-app {
+            width: 100%;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .screen { flex-grow: 1; }
+        .hidden { display: none; }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .requests-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out, margin-top 0.5s ease-in-out; margin-top: 0; }
+        .expanded .requests-content { max-height: 500px; margin-top: 1rem; }
+
+        .list-item-content { transition: transform 0.3s ease-out; position: relative; z-index: 10; background-color: white; }
+        .list-item-content.swiped { transform: translateX(-96px); }
+
+        /* Drag and Drop Styles */
+        .dragging { opacity: 0.5; }
+        .drag-over { border-top: 2px solid #3b82f6; }
+    </style>
+</head>
+<body>
+
+    <div id="main-app" class="w-full min-h-screen flex flex-col max-w-lg mx-auto bg-gray-50 shadow-lg relative">
+        <header class="bg-white/80 backdrop-blur-sm shadow-md sticky top-0 z-20 flex-shrink-0">
+            <div class="relative flex justify-center items-center p-4 h-16">
+                <div class="absolute left-4">
+                    <button id="menu-button" class="p-2 rounded-full hover:bg-gray-200 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
+                </div>
+                <h1 id="header-title" class="text-xl font-bold text-gray-900 cursor-pointer">Today's Prayer</h1>
+            </div>
+        </header>
+        
+        <div class="phone-content flex-grow">
+            <!-- ホーム画面 -->
+            <main id="home-screen" class="screen p-4">
+                <div class="fade-in bg-white rounded-2xl shadow-lg p-6 text-center">
+                    <p id="current-date" class="text-sm text-gray-500 mb-4"></p>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">今日の祈り</h2>
+                    <hr class="border-gray-300 my-4">
+                    <div id="prayer-list-container" class="space-y-3 text-left"></div>
+                </div>
+            </main>
+            <!-- リスト一覧画面 -->
+            <div id="list-screen" class="screen hidden p-4 flex flex-col">
+                <div class="mb-4">
+                    <input type="search" id="search-input" placeholder="名前か祈祷課題で検索..." class="w-full p-3 border rounded-lg">
+                </div>
+                <div id="all-people-list" class="flex-grow space-y-4 overflow-y-auto mb-4"></div>
+            </div>
+             <!-- Pray Cycle画面 -->
+            <div id="pray-cycle-screen" class="screen hidden p-4 flex flex-col">
+                <div id="pray-cycle-list" class="flex-grow space-y-4 overflow-y-auto"></div>
+            </div>
+            <!-- 設定画面 -->
+            <div id="settings-screen" class="screen hidden p-4">
+                <div class="space-y-6">
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <label for="start-date-input" class="block text-lg font-bold text-gray-800 mb-2">開始日の設定</label>
+                        <input type="date" id="start-date-input" class="w-full p-3 border rounded-lg">
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-lg">
+                        <label for="cycle-period-input" class="block text-lg font-bold text-gray-800 mb-2">周期の設定（日数）</label>
+                        <input type="number" id="cycle-period-input" min="1" class="w-full p-3 border rounded-lg">
+                    </div>
+                    <button id="save-settings-button" class="w-full bg-blue-500 text-white font-bold py-4 rounded-lg">設定を保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Action Buttons (リスト画面用) -->
+        <div id="fab-container" class="absolute bottom-6 left-6 flex flex-col gap-4 z-20 hidden">
+            <button id="add-group-fab" class="w-14 h-14 bg-green-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-green-600 transition">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+                 </svg>
+            </button>
+            <button id="add-person-fab" class="w-14 h-14 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-blue-600 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- サイドメニュー -->
+        <div id="menu-drawer" class="fixed inset-0 z-30 transform -translate-x-full transition-transform duration-300">
+            <div id="menu-overlay" class="absolute inset-0 bg-black/50"></div>
+            <div class="relative w-64 h-full bg-white shadow-xl p-4">
+                <h2 class="text-xl font-bold mb-6">メニュー</h2>
+                <ul class="space-y-2">
+                    <li><a href="#" data-screen="home-screen" class="menu-item block p-3 hover:bg-gray-100 rounded">戻る</a></li>
+                    <li><a href="#" data-screen="list-screen" class="menu-item block p-3 hover:bg-gray-100 rounded">祈りのリスト一覧</a></li>
+                    <li><a href="#" data-screen="pray-cycle-screen" class="menu-item block p-3 hover:bg-gray-100 rounded">Pray Cycle</a></li>
+                    <li><a href="#" data-screen="settings-screen" class="menu-item block p-3 hover:bg-gray-100 rounded">設定</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 祈る相手 詳細・編集モーダル -->
+        <div id="person-modal" class="fixed inset-0 bg-black/60 z-40 items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+                <!-- ★ 変更点：名前をh3からinputに変更 -->
+                <div class="mb-4">
+                    <label for="person-modal-name-input" class="block text-sm font-medium text-gray-700 mb-1">名前</label>
+                    <input type="text" id="person-modal-name-input" class="w-full p-3 border rounded-lg text-lg font-bold text-center" placeholder="名前">
+                </div>
+                <div class="mb-4">
+                    <label for="person-modal-group" class="block text-sm font-medium text-gray-700 mb-1">グループ</label>
+                    <select id="person-modal-group" class="w-full p-2 border rounded-lg bg-white"></select>
+                </div>
+                <textarea id="person-modal-requests" class="w-full h-40 p-3 border rounded-lg mb-4" placeholder="祈祷課題..."></textarea>
+                <div class="flex gap-2">
+                    <button id="person-modal-close" class="w-full py-3 bg-gray-200 rounded-lg">閉じる</button>
+                    <button id="person-modal-save" class="w-full py-3 bg-blue-500 text-white rounded-lg">保存</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 祈る相手 追加モーダル -->
+        <div id="add-person-modal" class="fixed inset-0 bg-black/60 z-40 items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+                <h3 class="text-2xl font-bold mb-4 text-center">祈る相手を追加</h3>
+                <form id="add-person-modal-form">
+                    <input type="text" id="new-person-modal-input" placeholder="名前を入力" class="w-full p-3 border rounded-lg mb-4" required>
+                    <div class="flex gap-2">
+                        <button type="button" id="add-person-modal-close" class="w-full py-3 bg-gray-200 rounded-lg">キャンセル</button>
+                        <button type="submit" class="w-full py-3 bg-blue-500 text-white rounded-lg">追加</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- グループ 追加モーダル -->
+        <div id="add-group-modal" class="fixed inset-0 bg-black/60 z-40 items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+                <h3 class="text-2xl font-bold mb-4 text-center">新しいグループを追加</h3>
+                 <form id="add-group-modal-form">
+                    <input type="text" id="new-group-modal-input" placeholder="グループ名" class="w-full p-3 border rounded-lg mb-4" required>
+                    <div class="flex gap-2">
+                        <button type="button" id="add-group-modal-close" class="w-full py-3 bg-gray-200 rounded-lg">キャンセル</button>
+                        <button type="submit" class="w-full py-3 bg-green-500 text-white rounded-lg">追加</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ★ 追加：グループ 編集・削除モーダル -->
+        <div id="edit-group-modal" class="fixed inset-0 bg-black/60 z-40 items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+                <h3 class="text-2xl font-bold mb-4 text-center">グループを編集</h3>
+                 <form id="edit-group-modal-form">
+                    <input type="text" id="edit-group-modal-input" placeholder="グループ名" class="w-full p-3 border rounded-lg mb-4" required>
+                    <div class="flex gap-2 mb-4">
+                        <button type="button" id="edit-group-modal-close" class="w-full py-3 bg-gray-200 rounded-lg">キャンセル</button>
+                        <!-- ★ 変更：bg-green-500 から bg-blue-500 へ -->
+                        <button type="submit" class="w-full py-3 bg-blue-500 text-white rounded-lg">保存</button>
+                    </div>
+                    <button type="button" id="edit-group-modal-delete" class="w-full py-3 bg-red-500 text-white rounded-lg">このグループを削除</button>
+                 </form>
+            </div>
+        </div>
+
+        <!-- ★ 追加：カスタムアラート・確認モーダル -->
+        <div id="custom-modal" class="fixed inset-0 bg-black/60 z-50 items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+                <h3 id="custom-modal-title" class="text-xl font-bold mb-4 text-center"></h3>
+                <p id="custom-modal-message" class="text-center mb-6"></p>
+                <div id="custom-modal-buttons" class="flex gap-2">
+                    <!-- Buttons will be injected here -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            let prayerDays = [];
+            let groups = [];
+            let settings = { startDate: new Date().toISOString().split('T')[0], cyclePeriod: 14 };
+            let swipedItem = null;
+
+            const DATA_STORAGE_KEY = 'prayerApp_data_v8'; // キーは変更なし
+
+            function loadData() {
+                const savedData = localStorage.getItem(DATA_STORAGE_KEY);
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    prayerDays = data.prayerDays || [];
+                    groups = data.groups || [];
+                    settings = data.settings || settings;
+                }
+                if (groups.length === 0 || !groups.find(g => g.id === 'unassigned')) {
+                    if (!groups.find(g => g.id === 'unassigned')) {
+                        groups.unshift({ id: 'unassigned', name: '未分類' });
+                    }
+                }
+                while (prayerDays.length < settings.cyclePeriod) prayerDays.push([]);
+                prayerDays.length = settings.cyclePeriod;
+            }
+
+            function saveData() {
+                localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify({ prayerDays, groups, settings }));
+            }
+
+            // Element declarations
+            const mainApp = document.getElementById('main-app');
+            const screens = document.querySelectorAll('.screen');
+            const headerTitle = document.getElementById('header-title');
+            const dateElement = document.getElementById('current-date');
+            const prayerListContainer = document.getElementById('prayer-list-container');
+            const allPeopleList = document.getElementById('all-people-list');
+            const prayCycleList = document.getElementById('pray-cycle-list');
+            const searchInput = document.getElementById('search-input');
+            const startDateInput = document.getElementById('start-date-input');
+            const cyclePeriodInput = document.getElementById('cycle-period-input');
+            const saveSettingsButton = document.getElementById('save-settings-button');
+            const menuButton = document.getElementById('menu-button');
+            const menuDrawer = document.getElementById('menu-drawer');
+            const menuOverlay = document.getElementById('menu-overlay');
+            const menuItems = document.querySelectorAll('.menu-item');
+            
+            const personModal = document.getElementById('person-modal');
+            const personModalNameInput = document.getElementById('person-modal-name-input'); // ★ 変更: h3からinputに変更
+            const personModalGroup = document.getElementById('person-modal-group');
+            const personModalRequests = document.getElementById('person-modal-requests');
+            const personModalSave = document.getElementById('person-modal-save');
+            const personModalClose = document.getElementById('person-modal-close');
+            
+            const fabContainer = document.getElementById('fab-container');
+            const addPersonFab = document.getElementById('add-person-fab');
+            const addGroupFab = document.getElementById('add-group-fab');
+            const addPersonModal = document.getElementById('add-person-modal');
+            const addGroupModal = document.getElementById('add-group-modal');
+            const addPersonModalForm = document.getElementById('add-person-modal-form');
+            const addGroupModalForm = document.getElementById('add-group-modal-form');
+            const newPersonModalInput = document.getElementById('new-person-modal-input');
+            const newGroupModalInput = document.getElementById('new-group-modal-input');
+            const addPersonModalClose = document.getElementById('add-person-modal-close');
+            const addGroupModalClose = document.getElementById('add-group-modal-close');
+
+            // ★ 追加：グループ編集モーダルの要素
+            const editGroupModal = document.getElementById('edit-group-modal');
+            const editGroupModalForm = document.getElementById('edit-group-modal-form');
+            const editGroupModalInput = document.getElementById('edit-group-modal-input');
+            const editGroupModalClose = document.getElementById('edit-group-modal-close');
+            const editGroupModalDelete = document.getElementById('edit-group-modal-delete');
+
+            // ★ 追加：カスタムモーダルのための要素
+            const customModal = document.getElementById('custom-modal');
+            const customModalTitle = document.getElementById('custom-modal-title');
+            const customModalMessage = document.getElementById('custom-modal-message');
+            const customModalButtons = document.getElementById('custom-modal-buttons');
+
+            // --- ★ 追加：カスタムアラート・確認関数 ---
+            function showCustomAlert(message, title = 'お知らせ') {
+                document.body.appendChild(customModal);
+                customModalTitle.textContent = title;
+                customModalMessage.textContent = message;
+                customModalButtons.innerHTML = `
+                    <button id="custom-modal-ok" class="w-full py-3 bg-blue-500 text-white rounded-lg">OK</button>
+                `;
+                customModal.style.display = 'flex';
+                
+                // OKボタンのイベントリスナー（一度だけ実行）
+                const okButton = document.getElementById('custom-modal-ok');
+                okButton.onclick = () => {
+                    customModal.style.display = 'none';
+                };
+            }
+
+            function showCustomConfirm(message, title = '確認') {
+                return new Promise((resolve) => {
+                    document.body.appendChild(customModal);
+                    customModalTitle.textContent = title;
+                    customModalMessage.textContent = message;
+                    customModalButtons.innerHTML = `
+                        <button id="custom-modal-cancel" class="w-full py-3 bg-gray-200 rounded-lg">キャンセル</button>
+                        <button id="custom-modal-confirm" class="w-full py-3 bg-red-500 text-white rounded-lg">OK</button>
+                    `;
+                    customModal.style.display = 'flex';
+
+                    const confirmButton = document.getElementById('custom-modal-confirm');
+                    const cancelButton = document.getElementById('custom-modal-cancel');
+
+                    confirmButton.onclick = () => {
+                        customModal.style.display = 'none';
+                        resolve(true);
+                    };
+                    cancelButton.onclick = () => {
+                        customModal.style.display = 'none';
+                        resolve(false);
+                    };
+                });
+            }
+            // --- カスタムアラート・確認関数ここまで ---
+
+
+            function showScreen(screenId) {
+                screens.forEach(s => s.classList.add('hidden'));
+                const targetScreen = document.getElementById(screenId);
+                if (targetScreen) targetScreen.classList.remove('hidden');
+
+                if (screenId === 'list-screen') {
+                    fabContainer.classList.remove('hidden');
+                } else {
+                    fabContainer.classList.add('hidden');
+                }
+
+                const screenTitles = {'home-screen': "Today's Prayer", 'list-screen': '祈りのリスト一覧', 'pray-cycle-screen': 'Pray Cycle', 'settings-screen': '設定'};
+                headerTitle.textContent = screenTitles[screenId] || "Today's Prayer";
+                toggleMenu(true);
+            }
+
+            function toggleMenu(forceClose = false) {
+                document.body.appendChild(menuDrawer);
+                menuDrawer.classList.toggle('-translate-x-full', forceClose);
+            }
+            
+            function renderHomeScreen() {
+                const today = new Date();
+                const startDate = new Date(settings.startDate);
+                const todayUTC = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+                const startUTC = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+                const dayDifference = Math.floor((todayUTC - startUTC) / (1000 * 60 * 60 * 24));
+                
+                const options = { month: 'long', day: 'numeric', weekday: 'long' };
+                dateElement.textContent = today.toLocaleDateString('ja-JP-u-ca-japanese', options);
+
+                prayerListContainer.innerHTML = '';
+                const totalPeople = prayerDays.flat().length;
+                if (totalPeople === 0) {
+                    prayerListContainer.innerHTML = '<p class="text-center text-gray-500">リストから祈る人を追加してください</p>';
+                    return;
+                }
+                if (dayDifference < 0) {
+                    prayerListContainer.innerHTML = `<p class="text-center text-gray-500">開始まであと ${-dayDifference} 日です</p>`;
+                    return;
+                }
+                
+                const todaysIndex = dayDifference % settings.cyclePeriod;
+                const peopleForToday = prayerDays[todaysIndex] || [];
+
+                if (peopleForToday.length > 0) {
+                    peopleForToday.forEach(person => {
+                        const container = document.createElement('div');
+                        container.className = 'bg-blue-50 p-4 rounded-lg shadow-sm cursor-pointer hover:bg-blue-100 transition';
+                        container.innerHTML = `<div class="flex justify-between items-center"><span class="text-lg font-medium text-blue-800">${person.name}</span><svg class="w-5 h-5 text-blue-500 transition-transform" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg></div><div class="requests-content"><hr class="my-2 border-blue-200"><p class="text-left text-gray-700 whitespace-pre-wrap">${person.requests || '祈祷課題はまだ登録されていません。'}</p></div>`;
+                        container.addEventListener('click', (e) => {
+                            e.currentTarget.classList.toggle('expanded');
+                            e.currentTarget.querySelector('svg').classList.toggle('rotate-180');
+                        });
+                        prayerListContainer.appendChild(container);
+                    });
+                } else {
+                    prayerListContainer.innerHTML = '<p class="text-center text-gray-500">今日の対象者はいません</p>';
+                }
+            }
+            
+            function renderPrayCycleScreen() {
+                prayCycleList.innerHTML = '';
+                prayerDays.forEach((peopleOnDay, dayIndex) => {
+                    const dayContainer = document.createElement('div');
+                    dayContainer.dataset.dayIndex = dayIndex;
+                    dayContainer.className = 'p-2 rounded-lg'; // Added padding for better drop area
+                    dayContainer.innerHTML = `<h3 class="text-md font-bold text-gray-600 mb-2 p-1 bg-gray-200 rounded">${dayIndex + 1}日目</h3>`;
+                    const listForDay = document.createElement('div');
+                    listForDay.className = 'space-y-2 min-h-[20px]'; // Minimum height for drop target
+
+                    if (peopleOnDay.length > 0) {
+                        peopleOnDay.forEach(person => createPersonListItem(person, dayIndex, listForDay, true, true)); // Enable drag
+                    }
+
+                    dayContainer.appendChild(listForDay);
+                    prayCycleList.appendChild(dayContainer);
+                    
+                    // Add drop listeners to the container
+                    handleDrop(dayContainer);
+                });
+            }
+
+            function renderAllPeopleList() {
+                allPeopleList.innerHTML = '';
+                swipedItem = null;
+                const searchTerm = searchInput.value.trim().toLowerCase();
+                const allPeople = prayerDays.flat();
+
+                if (searchTerm) {
+                    const filteredPeople = allPeople.filter(p => p.name.toLowerCase().includes(searchTerm) || (p.requests && p.requests.toLowerCase().includes(searchTerm)));
+                    if (filteredPeople.length > 0) {
+                        filteredPeople.forEach(person => createPersonListItem(person, null, allPeopleList, true, false));
+                    } else {
+                        allPeopleList.innerHTML = '<p class="text-center text-gray-500">検索結果が見つかりません。</p>';
+                    }
+                } else {
+                    groups.forEach(group => {
+                        const peopleInGroup = allPeople.filter(p => p.groupId === group.id);
+                        if(peopleInGroup.length === 0 && group.id === 'unassigned' && groups.length > 1) return;
+
+                        const groupContainer = document.createElement('div');
+                        
+                        // ★ 変更：グループヘッダーのHTMLとイベントリスナー
+                        const groupHeader = document.createElement('h3');
+                        groupHeader.className = 'text-md font-bold text-gray-600 mb-2 p-1 bg-gray-200 rounded';
+                        groupHeader.textContent = group.name;
+
+                        if (group.id !== 'unassigned') {
+                            groupHeader.classList.add('cursor-pointer', 'hover:bg-gray-300', 'transition');
+                            groupHeader.title = 'クリックして編集';
+                            groupHeader.onclick = () => openEditGroupModal(group.id);
+                        }
+                        groupContainer.appendChild(groupHeader);
+                        // ★ 変更ここまで
+
+                        const listInGroup = document.createElement('div');
+                        listInGroup.className = 'space-y-2';
+                        if (peopleInGroup.length > 0) {
+                            peopleInGroup.forEach(person => createPersonListItem(person, null, listInGroup, true, false));
+                        }
+                        groupContainer.appendChild(listInGroup);
+                        allPeopleList.appendChild(groupContainer);
+                    });
+                }
+            }
+
+            function createPersonListItem(person, dayIndex, container, isInteractive, isDraggable = false) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'relative rounded-lg shadow-sm overflow-hidden';
+                
+                const content = document.createElement('div');
+                content.className = 'w-full p-4 bg-white';
+                content.innerHTML = `<div class="flex items-center"><span class="text-lg">${person.name}</span></div>`;
+
+                if (isInteractive) {
+                    content.classList.add('cursor-pointer', 'list-item-content');
+                    const actionBg = document.createElement('div');
+                    actionBg.className = 'absolute inset-y-0 right-0 w-24 bg-red-500 flex items-center justify-center';
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'text-white font-bold';
+                    deleteButton.textContent = '削除';
+                    deleteButton.onclick = () => deletePerson(person.id);
+                    actionBg.appendChild(deleteButton);
+                    wrapper.appendChild(actionBg);
+                    handleSwipe(content, person.id);
+                }
+
+                 if (isDraggable) {
+                    wrapper.draggable = true;
+                    wrapper.dataset.personId = person.id;
+                    wrapper.dataset.fromDay = dayIndex;
+                    handleDrag(wrapper);
+                }
+
+
+                wrapper.appendChild(content);
+                container.appendChild(wrapper);
+            }
+            
+            function renderSettingsScreen() {
+                startDateInput.value = settings.startDate;
+                cyclePeriodInput.value = settings.cyclePeriod;
+            }
+
+            function openPersonModal(personId) {
+                if (isSwiping) return;
+                const person = prayerDays.flat().find(p => p.id === personId);
+                if (!person) return;
+                
+                document.body.appendChild(personModal);
+                personModal.style.display = 'flex';
+                
+                // ★ 変更点：textContentからinputのvalueに設定
+                personModalNameInput.value = person.name; 
+                personModalRequests.value = person.requests || '';
+
+                personModalGroup.innerHTML = '';
+                groups.forEach(group => {
+                    const option = document.createElement('option');
+                    option.value = group.id;
+                    option.textContent = group.name;
+                    if (group.id === person.groupId) option.selected = true;
+                    personModalGroup.appendChild(option);
+                });
+                
+                // ★ 変更点：保存ロジック
+                personModalSave.onclick = () => {
+                    const newName = personModalNameInput.value.trim();
+                    if (!newName) {
+                        // ★ 変更: alertからcustomAlertへ
+                        showCustomAlert('名前を入力してください。', 'エラー'); 
+                        return;
+                    }
+
+                    person.name = newName; // 名前の更新
+                    person.requests = personModalRequests.value.trim();
+                    person.groupId = personModalGroup.value;
+                    
+                    saveData();
+                    renderAllPeopleList(); // リスト一覧を更新
+                    renderHomeScreen(); // ホーム画面も更新
+                    renderPrayCycleScreen(); // サイクル画面も更新
+                    closePersonModal();
+                };
+            }
+            function closePersonModal() { personModal.style.display = 'none'; }
+            
+            // ★ 追加：グループ編集モーダルを開く
+            function openEditGroupModal(groupId) {
+                const group = groups.find(g => g.id === groupId);
+                if (!group || group.id === 'unassigned') return;
+
+                document.body.appendChild(editGroupModal);
+                editGroupModal.style.display = 'flex';
+                editGroupModalInput.value = group.name;
+
+                // 既存のリスナーを削除（重複防止）
+                editGroupModalForm.onsubmit = null;
+                editGroupModalDelete.onclick = null;
+
+                // 保存ボタンの処理
+                editGroupModalForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const newName = editGroupModalInput.value.trim();
+                    if (newName && newName !== group.name) {
+                        if (groups.some(g => g.name === newName && g.id !== groupId)) {
+                            showCustomAlert('そのグループ名は既に使用されています。', 'エラー');
+                            return;
+                        }
+                        group.name = newName;
+                        saveData();
+                        renderAllPeopleList();
+                        editGroupModal.style.display = 'none';
+                    } else if (!newName) {
+                         showCustomAlert('グループ名を入力してください。', 'エラー');
+                    } else {
+                         // 名前が変わっていない場合はそのまま閉じる
+                         editGroupModal.style.display = 'none';
+                    }
+                };
+
+                // 削除ボタンの処理
+                editGroupModalDelete.onclick = () => deleteGroup(groupId);
+            }
+
+
+            function addPerson(name) {
+                let minLength = Infinity;
+                let targetDayIndex = 0;
+                for (let i = 0; i < prayerDays.length; i++) {
+                    if (prayerDays[i].length < minLength) {
+                        minLength = prayerDays[i].length;
+                        targetDayIndex = i;
+                    }
+                }
+                prayerDays[targetDayIndex].push({ id: Date.now(), name: name, requests: '', groupId: 'unassigned' });
+                saveData();
+            }
+
+            // ★ 変更点：confirmをcustomConfirmに変更 (async functionに変更)
+            async function deletePerson(personId) {
+                 if (await showCustomConfirm(`「${prayerDays.flat().find(p => p.id === personId)?.name || ''}」さんをリストから削除しますか？`, '削除の確認')) {
+                    let found = false;
+                    for (let i = 0; i < prayerDays.length; i++) {
+                        const initialLength = prayerDays[i].length;
+                        prayerDays[i] = prayerDays[i].filter(p => p.id !== personId);
+                        if (prayerDays[i].length < initialLength) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        saveData();
+                        renderAllPeopleList();
+                        renderPrayCycleScreen();
+                        renderHomeScreen();
+                    }
+                }
+            }
+
+            // ★ 追加：グループ削除機能
+            async function deleteGroup(groupId) {
+                const group = groups.find(g => g.id === groupId);
+                if (!group || group.id === 'unassigned') return;
+
+                if (await showCustomConfirm(`グループ「${group.name}」を削除しますか？\nこのグループのメンバーは「未分類」に移動します。`, 'グループ削除の確認')) {
+                    // グループを削除
+                    groups = groups.filter(g => g.id !== groupId);
+
+                    // 該当グループのメンバーを「未分類」に移動
+                    prayerDays.forEach(day => {
+                        day.forEach(person => {
+                            if (person.groupId === groupId) {
+                                person.groupId = 'unassigned';
+                            }
+                        });
+                    });
+
+                    saveData();
+                    renderAllPeopleList();
+                    editGroupModal.style.display = 'none';
+                }
+            }
+
+            let isSwiping = false;
+            function handleSwipe(element, personId) {
+                let startX = 0, diff = 0;
+                element.addEventListener('touchstart', (e) => {
+                    if (swipedItem && swipedItem !== element) swipedItem.classList.remove('swiped');
+                    startX = e.touches[0].clientX;
+                    isSwiping = false;
+                    element.style.transition = 'none';
+                }, { passive: true });
+                element.addEventListener('touchmove', (e) => {
+                    diff = e.touches[0].clientX - startX;
+                    if (Math.abs(diff) > 10) isSwiping = true;
+                    if (diff < 0 && diff > -120) element.style.transform = `translateX(${diff}px)`;
+                }, { passive: true });
+                element.addEventListener('touchend', () => {
+                    element.style.transition = 'transform 0.3s ease-out';
+                    if (diff < -50) {
+                        element.classList.add('swiped');
+                        swipedItem = element;
+                    } else {
+                        element.classList.remove('swiped');
+                        swipedItem = null;
+                    }
+                    element.style.transform = '';
+                    setTimeout(() => { isSwiping = false; }, 100);
+                });
+                element.addEventListener('click', () => { if (!isSwiping && !element.classList.contains('swiped')) openPersonModal(personId); });
+            }
+
+            // --- DRAG & DROP LOGIC ---
+            function handleDrag(item) {
+                item.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', JSON.stringify({
+                        personId: item.dataset.personId,
+                        fromDay: item.dataset.fromDay
+                    }));
+                    setTimeout(() => item.classList.add('dragging'), 0);
+                });
+                item.addEventListener('dragend', () => item.classList.remove('dragging'));
+            }
+
+            function handleDrop(dayContainer) {
+                dayContainer.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dayContainer.classList.add('bg-blue-100');
+                });
+                dayContainer.addEventListener('dragleave', () => {
+                    dayContainer.classList.remove('bg-blue-100');
+                });
+                dayContainer.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    dayContainer.classList.remove('bg-blue-100');
+                    const { personId, fromDay } = JSON.parse(e.dataTransfer.getData('text/plain'));
+                    const toDay = parseInt(dayContainer.dataset.dayIndex);
+
+                    if (fromDay !== toDay) {
+                        const personToMove = prayerDays[fromDay].find(p => p.id == personId);
+                        if(personToMove) {
+                            prayerDays[fromDay] = prayerDays[fromDay].filter(p => p.id != personId);
+                            prayerDays[toDay].push(personToMove);
+                            saveData();
+                            renderPrayCycleScreen();
+                            renderHomeScreen();
+                        }
+                    }
+                });
+            }
+
+            // --- Event Listeners Setup ---
+            headerTitle.addEventListener('click', () => { renderHomeScreen(); showScreen('home-screen'); });
+            menuButton.addEventListener('click', () => toggleMenu());
+            menuOverlay.addEventListener('click', () => toggleMenu());
+            menuItems.forEach(item => {
+                item.addEventListener('click', (e) => { 
+                    e.preventDefault(); 
+                    const screenId = e.currentTarget.dataset.screen;
+                    if(screenId === 'pray-cycle-screen') renderPrayCycleScreen();
+                    if(screenId === 'list-screen') renderAllPeopleList();
+                    showScreen(screenId); 
+                });
+            });
+
+            addPersonFab.addEventListener('click', () => { document.body.appendChild(addPersonModal); addPersonModal.style.display = 'flex'; });
+            addGroupFab.addEventListener('click', () => { document.body.appendChild(addGroupModal); addGroupModal.style.display = 'flex'; });
+            addPersonModalClose.addEventListener('click', () => { addPersonModal.style.display = 'none'; });
+            addGroupModalClose.addEventListener('click', () => { addGroupModal.style.display = 'none'; });
+            // ★ 追加：グループ編集モーダルの閉じるボタン
+            editGroupModalClose.addEventListener('click', () => { editGroupModal.style.display = 'none'; });
+
+            addPersonModalForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const name = newPersonModalInput.value.trim();
+                if (name) {
+                    addPerson(name);
+                    renderAllPeopleList();
+                    newPersonModalInput.value = '';
+                    addPersonModal.style.display = 'none';
+                }
+            });
+            
+            addGroupModalForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const groupName = newGroupModalInput.value.trim();
+                if (groupName && !groups.some(g => g.name === groupName)) {
+                    groups.push({ id: `group_${Date.now()}`, name: groupName });
+                    saveData();
+                    renderAllPeopleList();
+                    newGroupModalInput.value = '';
+                    addGroupModal.style.display = 'none';
+                }
+            });
+
+            searchInput.addEventListener('input', renderAllPeopleList);
+
+            saveSettingsButton.addEventListener('click', () => {
+                const oldPeriod = settings.cyclePeriod;
+                const newPeriod = parseInt(cyclePeriodInput.value) || 14;
+
+                settings.startDate = startDateInput.value;
+                settings.cyclePeriod = newPeriod;
+
+                if (oldPeriod !== newPeriod) {
+                    const allPeople = prayerDays.flat();
+                    prayerDays = Array.from({ length: newPeriod }, () => []);
+                    allPeople.forEach(person => {
+                        let minLength = Infinity;
+                        let targetDayIndex = 0;
+                        for (let i = 0; i < prayerDays.length; i++) {
+                            if (prayerDays[i].length < minLength) {
+                                minLength = prayerDays[i].length;
+                                targetDayIndex = i;
+                            }
+                        }
+                        prayerDays[targetDayIndex].push(person);
+                    });
+                }
+                
+                saveData();
+                // ★ 変更: alertからcustomAlertへ
+                showCustomAlert('設定を保存しました。');
+                renderAllPeopleList();
+                renderHomeScreen();
+                showScreen('home-screen');
+            });
+
+            personModalClose.addEventListener('click', closePersonModal);
+            
+            // Initial Load
+            loadData();
+            renderHomeScreen();
+            renderAllPeopleList();
+            renderSettingsScreen();
+        });
+    </script>
+</body>
+</html>
+
+
